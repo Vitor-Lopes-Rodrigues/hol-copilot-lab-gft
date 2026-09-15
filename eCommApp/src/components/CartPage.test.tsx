@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import CartPage from './CartPage';
 import { CartContext, CartItem } from '../context/CartContext';
@@ -42,13 +43,13 @@ const mockCartItems: CartItem[] = [
     }
 ];
 
-const mockCartContext = {
-    cartItems: mockCartItems,
+const createCartContext = (cartItems: CartItem[] = mockCartItems) => ({
+    cartItems,
     addToCart: vi.fn(),
     clearCart: vi.fn()
-};
+});
 
-const renderWithCartContext = (cartContext = mockCartContext) => {
+const renderWithCartContext = (cartContext = createCartContext()) => {
     return render(
         <CartContext.Provider value={cartContext}>
             <CartPage />
@@ -71,5 +72,49 @@ describe('CartPage', () => {
         expect(screen.getByText('Price: $49.99')).toBeInTheDocument();
         expect(screen.getByText('Quantity: 2')).toBeInTheDocument();
         expect(screen.getByText('Quantity: 1')).toBeInTheDocument();
+    });
+
+    it('shows an empty-cart message when there are no items', () => {
+        renderWithCartContext(createCartContext([]));
+
+        expect(screen.getByText('Your cart is empty.')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Checkout' })).not.toBeInTheDocument();
+    });
+
+    it('opens the checkout confirmation when Checkout is clicked', async () => {
+        const user = userEvent.setup();
+        renderWithCartContext();
+
+        await user.click(screen.getByRole('button', { name: 'Checkout' }));
+
+        expect(screen.getByTestId('checkout-modal')).toBeInTheDocument();
+    });
+
+    it('closes checkout without clearing the cart when cancelled', async () => {
+        const user = userEvent.setup();
+        const cartContext = createCartContext();
+        renderWithCartContext(cartContext);
+
+        await user.click(screen.getByRole('button', { name: 'Checkout' }));
+        await user.click(screen.getByTestId('cancel-checkout'));
+
+        expect(screen.queryByTestId('checkout-modal')).not.toBeInTheDocument();
+        expect(cartContext.clearCart).not.toHaveBeenCalled();
+        expect(screen.getByText('Your Cart')).toBeInTheDocument();
+    });
+
+    it('clears the cart and displays the processed order after confirmation', async () => {
+        const user = userEvent.setup();
+        const cartContext = createCartContext();
+        renderWithCartContext(cartContext);
+
+        await user.click(screen.getByRole('button', { name: 'Checkout' }));
+        await user.click(screen.getByTestId('confirm-checkout'));
+
+        expect(cartContext.clearCart).toHaveBeenCalledTimes(1);
+        expect(screen.getByText('Your order has been processed!')).toBeInTheDocument();
+        expect(screen.getByText('Test Product 1')).toBeInTheDocument();
+        expect(screen.getByText('Quantity: 2')).toBeInTheDocument();
+        expect(screen.queryByTestId('checkout-modal')).not.toBeInTheDocument();
     });
 });
